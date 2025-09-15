@@ -91,3 +91,85 @@
 
 - Pod 관리
 - Pod를 만들어주고, Pod가 죽었을 때 다시 생성해줌
+
+
+
+**Container**
+
+- Pod 안에 있는 컨테이너끼리는 포트가 중복될 수 없다
+
+**Label**
+
+- Key : value 형태
+- Service에서 selector에 Pod에 있는 labels의 키값과 동일하게 적으면 연결됨
+
+**Node Schedule**
+
+1. Pod를 만들 때 노드를 직접 지정하는 방법
+    1. hostname: node1
+2. 쿠버네티스의 스케줄러가 판단해서 지정
+3. request, limits
+    - Memory: 초과 시 Pod 종료 시킴
+    - Cpu:  초과해도 Pod 종료시키진 않음 (느려질뿐)
+
+
+
+## Volume
+emptyDir
+
+- 설정만 하면 파드와 함께 생성되고, 파드가 죽으면 같이 사라짐
+- 용도 : 임시 파일, 캐시 등
+
+hostPath
+
+- 노드와 함께 생존
+- mountPath랑 hostPath를 지정해줌
+    - hostPath → host OS, 즉 volume 데이터들은 host OS에 저장되므로 파드가 죽어도 남아있음
+
+PV/PVC 
+
+- 클러스터 전체에서 영구 보존
+- PV (PersistentVolume)
+    - 관리자가 미리 준비해둔 스토리지 자원
+- PVC (PersistentVolumeClaim)
+    - 개발자가 작성한 스토리지 요청서
+
+![image.png](attachment:f31d7188-789c-4c32-872c-710a40f2b15d:image.png)
+
+- Pod -  PVC - PV
+- pv-pvc 1:1로만 해야되는 것도 있음
+- storageClass
+    - 동적인 설정이 가능하게 해줌
+    - pv를 설정 안해도 sc가 pv를 만들어달라고 할 수 있음
+        - pod - psv -sc → (pv)
+    - 클라우드 환경에서 많이 쓰임
+
+
+## sevice
+ClusterIP (기본값)
+
+- 내부 전용: 클러스터 안에서만 접근 가능
+- 용도: 내부 서비스끼리 통신(DB, API 등)
+- **접근**: `service-name:port`
+
+NodePort
+
+- 외부 접근: 각 노드의 특정 포트로 접근 가능
+- 포트 범위: 30000~32767
+- **접근**: `NodeIP:NodePort`
+- ClusterIP기능도 포함
+
+LoadBalancer
+
+- **클라우드 로드밸런서**: 외부 로드밸런서 자동 생성
+- **고정 외부 IP**: 별도 IP 주소 할당
+- **AWS/GCP/Azure 등 클라우드 환경 필요**
+- **NodePort + ClusterIP 기능도 포함**
+
+## Namespace, ResourceQuota, LimitRange
+ResourceQuota
+- ResourceQuota 생성 시 resources(requests, limits)을 지정하지 않으면 생성되지 않음 
+
+- 파드를 먼적 만들고 ResourceQuota 를 생성하면 ResourceQuota 의 규칙이 무시될 수 있음
+- ResourceQuota를 만들때는 namespace에 pod가 없는 상태일것
+- 실무에서는 namespace보다 deployment에 더 많이 설정함
