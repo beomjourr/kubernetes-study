@@ -173,3 +173,193 @@ ResourceQuota
 - 파드를 먼적 만들고 ResourceQuota 를 생성하면 ResourceQuota 의 규칙이 무시될 수 있음
 - ResourceQuota를 만들때는 namespace에 pod가 없는 상태일것
 - 실무에서는 namespace보다 deployment에 더 많이 설정함
+
+
+
+
+
+
+
+# Controller
+
+![image.png](attachment:85676170-d990-4bba-ac0a-ba38c0aaaba2:image.png)
+
+**Auto Healing**
+
+- 
+
+`terminationGracePeriodSeconds` 옵션을 명시적으로 설정하지 않으면 **기본값은 30초**입니다.
+
+![image.png](attachment:4e6b91e9-1e54-44e9-beaa-9ebde886d929:image.png)
+
+- Controller와 Pod는 label과 selector로 연결함 (서비스처럼)
+
+## 기능
+
+**temsplate**
+
+- 새로 만들 땐 어떻게 만들까에 대한 정의
+- 컨트롤러(Deployment, ReplicaSet 등)은 Pod를 직접 적지 않고, template 안에 정의된 내용을 복사해서 새 Pod를 생성
+
+**replicas**
+
+- 몇 개의 파드를 유지할 것인가
+- replicas: 0 하면, 만들어져있는 파드들도 삭제됨
+
+### Selector
+
+- 어떤 Pod가 이 컨트롤러(Deployment/ReplicaSet)에 의해 관리될지를 정의하는 조건.
+- matchLabels를 일반적으로 사용, matchExpressions는 잘 사용 안함
+    - matchExpressions의 기능은, 사전에 어떤 오브젝트가 미리 만들어져있고, 그 오브젝트에 여러 라벨이 붙어있을떄 ,내가 원하는 오브젝트만 세밀하게 선택하기 위해 주로 사용
+- matchLabels랑 matchExpressions도 혼합해서 사용 가능
+
+주의사항
+
+- slector에 있는 모든 내용이 template > labels 내용에 포함이 되어야 함
+
+```jsx
+# ❌ 경우 1: selector 라벨이 Pod에 없음
+selector:
+  matchLabels:
+    type: web
+    ver: v1
+template:
+  labels:
+    type: web
+    # ver: v1 누락! - 에러 발생
+
+# ❌ 경우 2: 라벨 값이 다름  
+selector:
+  matchLabels:
+    ver: v1
+template:
+  labels:
+    ver: v2  # v1이 아닌 v2 - 에러 발생
+    
+    
+# ❌ 경우 3: 같은 키 중복 (이건 Yaml 파일 자체가 잘못된 것)
+selector:
+  matchLabels:
+    type: web
+    ver: v1       # 이 조건이 문제!
+template:
+  metadata:
+    labels:
+      type: web
+      ver: v1
+      ver: v2     # 불가능! 같은 키에 두 개 값 설정 불가
+```
+
+### ReplicaSet
+
+- 지정된 개수 (replicas)의 Pod를 유지
+- template 기준으로 Pod 생성, 개수 유지
+
+![image.png](attachment:343d9fea-2a13-42f7-9af1-83f46408fd68:image.png)
+
+## Deployment
+
+- 한 서비스 운영중인데, 이 서비스를 업데이트 해야돼서 재배포를 해야될 때 사용
+
+![image.png](attachment:382435c0-85c2-4119-b0bb-98d6c9d1bde4:image.png)
+
+대표적인 배포방식
+
+### ReCreate
+
+- 업데이트 시 기존 버전의 Pod를 모두 종료한 후 새 버전의 Pod를 생성
+    - 업데이트할 Deployment에서 관리되는 Pod들 모두
+- 업데이트 시 Deployment가 Pod를 먼저 삭제 (다운타임 발생) 후 새 파드 생성
+    - ex) replicas: 3 → 0 → 3 (새 버전)
+- 단점 : 다운타임 발생 (일시적인 정지가 가능한 서비스에서만 사용 가능)
+
+### Rolling Update
+
+- 업데이트 시 Deployment가 v2 Pod를 먼저 생성 후 v1 Pod 삭제 (점진적 교체)
+    - ex) replicas : 3 (고정), 실제 파드 : 3개 → 4개 → 3개 → 4개 →
+- 배포 중간에 추가적인 자원을 요구함
+    - v2 Pod가 생성될 때 v1  Pod가 아직 떠있는 상태라 둘다 접근 가능할 수  있음
+- 다운타임은 없음
+- 업데이트 당시 자원 부족 시 배포가 멈출 수 있음
+    - 자원이 부족한 상태에서 업데이트시에는 ReCreate가 더 안전할 수도 있음
+
+### Blue/Green
+
+- `Blue` = 현재 운영 중인 버전, `Green` = 새로 배포할 버전
+- Deployment뿐만 아니라 Replica를 관리하는 모든 컨트롤러에서 할 수 있음
+- Controller가 v2 Pod만들어서 Service에 연동할 때 일시적으로 자원사용량 2배(파드 2개씩 떠있어서)지만 일시적이어서 서비스에 영향은 없고, 다운타임 없음
+- 만약 v2에서 문제가 발생하면 라벨만 v1으로 바꾸면 돼서 롤백이 용이함
+    - 문제 없다면 v1은 삭제하면 완료
+
+### Canary (새(bird) 이름)
+
+> Rolling Update : 잠깐 두 버전이 섞여서 서비스됨
+Blue/Green : 한 번에 완전히 100% 바뀜, 섞임 없음
+> 
+
+![image.png](attachment:361d16a9-48bc-46e5-a70d-59d70e6a9910:image.png)
+
+- Deployment에 정의하는 selector, replicas, template는 직접 파드를 만들어서 관리하는게 아니고, RepicasSet을 만들고 거기에 값을 지정하기 위함
+    - 즉 ReplicaSet를 거쳐서 파드를 재어
+
+**revisiosnHistoryLimit**
+
+- 새 버전을 만들 떄 0인 replicaSet을 몇개까지 남겨둘 것인가
+    - 오래된 순으로 삭제됨
+- 이 옵션 추가 안하면 기본 10개
+
+- Rolling Update가 진행될 때 ReplicaSet은 같은 라벨을 가진 Pod v1에 연결될 수도 있지 않았을까?
+    - Deployment가 ReplicaSet을 만들때 라벨셀렉터 말고 추가 라벨셀렉터를 만들기때문에 연결 안됨
+
+![image.png](attachment:c6b32ab9-65c0-41f3-9a44-dd901186b9c5:image.png)
+
+**DemonSet**
+
+- 모든 노드에 파드를 하나씩 배치하는 컨트롤러
+- 노드 당 하나보다 더 많은 파드를 만들 수는 없지만, 노드에 파드를 안만들 수는 있음
+    - DemonSet의 template에 nodeSelector 옵션을 추가해서 특정 노드들에만 파드를 만들게 설정 가능
+- replicas 설정 없음 (노드 수만큼 자동)
+- 스케줄링 무시하고 모든 노드에 배치
+- 주요 용도
+    - 로그 수집기 (Fluentd, Filebeat)
+    - 모니터링 에이전트 (Prometheus Node Exporter)
+    - 네트워킹 (CNI 플러그인)
+    - 보안 에이전트 (Falco)
+
+**Job**
+
+- 한 번만 실행
+- 성공하면 파드 종료
+    - 파드가 삭제되는건 아니고, 자원을 사용하지 않는 상태
+    - 그 이후에 파드 직접 삭제
+- 실패하면 재시도 (설정에 따라)
+
+**CronJob**
+
+- 정히진 시간에 반복 실행 (스케줄링)
+- Linux cron 문법 사용
+- 내부적으로 Job을 사용
+- 주요 용도
+    - 데이터 백업, 예약 메일, 주기적인 업데이트 확인 등
+
+```jsx
+"0 2 * * *"    = 매일 새벽 2시
+"*/30 * * * *" = 30분마다
+"0 0 * * 0"    = 매주 일요일 자정
+```
+
+![image.png](attachment:4cac4029-0c9a-4b2a-98ab-315cf951d784:image.png)
+
+**Allow (default)**
+
+- 자신의 차례떄는 Job이 만들어지고 Pod가 생성
+- 겹쳐서 실행 가능
+
+Forbid
+
+- 2분이 됐을 때까지 1분에 생성한 Pod가 종료되지 않으면, 다음과정 스킵됨
+    - Pod가 종료됐을 때 해당되는 시간의 스케줄이 돌음
+
+**Replace**
+
+- 새로운 실행이 시작되면, 이전 실행 중이던 Job(과 그 파드들)을 갖에로 종료시키고 새 Job으로 교체
