@@ -363,3 +363,143 @@ Forbid
 **Replace**
 
 - 새로운 실행이 시작되면, 이전 실행 중이던 Job(과 그 파드들)을 갖에로 종료시키고 새 Job으로 교체
+
+
+
+# Pod 상세
+
+# Pod LifeCycle
+
+![image.png](attachment:4e3b2887-3902-4cf8-827b-273f39da138a:image.png)
+
+![image.png](attachment:17e8e613-5574-454e-8b3e-d0e8af8b58b1:image.png)
+
+**Phase**
+
+- Pod의 메인 상태
+    - Pending, Running, Succeded, Failed, Unknown
+        - Unknown: 노드와 파드 간 통신장애상태
+
+**Pending 상태**
+
+- 파드의 최초 상태는 Pending 상태
+- **initContainer**
+    - 본 컨테이너가 기동되기 전에 초기화 시켜야될 내용이 있는 경우, initContainer로 초기화 스크립트를 넣을 수 있음
+    - 이 스크립트가 본 컨테이너보다 먼저 실행돼서 성공됐거나, 아예 시도를 하지 않으면 : true
+    - 실패했으면 : False
+
+**Running 상태**
+
+- Pod가 **노드에 스케줄되고**, **최소 하나의 컨테이너가 시작**되면 Running
+- Pod의 상태가 Running이더라도, 내부 컨테이너 상태가 Running 상태가 아닐 수도 있기 때문에 파드 뿐만 아니라 컨테이너의 상태도도 확인해줘야 함
+- 컨테이너가 모두 Running일수도 있지만, Waiting상태 + CrashLoopBackOff(기동 중 문제발생하여 재시작) 가 Reason으로 나올 수도 잇음
+    - 이 때는 ContainerReady : False, Ready: False
+
+**Failed or Succeded 상태**
+
+- 모든 컨테이너가 Terminated 상태가 되고, 이 중 하나라도 Error면  Pod는 Failed 상태
+    - 
+- Job이나 CronJob으로 실행된 Pod가 자신의 작업을 끝마치면 Failed나 Succeded 상태가 됨
+    - Container중 하나라도 Error면 Falied
+    - Container들 모두 Completed면 Succeded
+    - 두 케이스 모두 ContainerReady랑 Ready는 모두 False
+
+![image.png](attachment:e5e3fe0f-1626-4578-914b-b9109ed6d1a6:image.png)
+
+**ReadinessProve**
+
+- **App 구동 순간**에 트래픽 실패를 없앰
+    - App이 구동되기 전까지는 Service와 연결되지 않게 해서, 새 Pod가  Running상태지만 아직 App이 구동되지 않아서 사용자가 접근했을 때 문제가 될 상황을 방지해줌 - 기존 파드로 연결되도록함
+    - Pod가 Running 상태인데, App이 아직 Booting 중이라, 사용자가 접근했는데, 정상화면을 볼 수 없는 문제를 방지해줌
+
+**LivenessProbe**
+
+- **App 장애시** 지속적인 트래픽 실패를 없앰
+    - 예를 들어 톰캣은 돌고있지만, 그 위에 띄워진 앱에 문제가 생겨 502같은 에러가 발생했을 떄, Pod는 Running이지만 안쪽에는 장애상태 → LivenessProbe 설정을 해주면 App에 문제가 있을 때 Pod를 재실행하도록 해줌
+
+## QoS (Quality of Service)
+
+![image.png](attachment:066ee814-6088-4404-b052-670406eda559:image.png)
+
+> 메모리 부족 시 삭제 순서
+- BestEffort Pod → Burstable Pod → Guaranteed Pod
+> 
+
+**Quaranteed - 최고 등급**
+
+- 모든 Container에 Request와 Limit가 설정
+- Request와 Limit에는 Memory와 CPU가 모두 설정
+- 각 Container 내의 Memeory와 CPU의 Request와 Limit의 값이 같음
+
+**Burstable - 중간 등급**
+
+- **Quaranteed와 BestEfffort 사이**
+    - requests < limits 이거나, request만 설정되어있거나, 파드에서 하나는 컨테이너가 다 설정되어있지만, 나머지 하나의 컨테이너는 **BestEfffort**일때
+- **Quaranteed는 아니고, 뭔가 하나씩 없는**
+- **Burstable 등급에 여러 파드가 있는 경우 먼저 삭제되는 순서?**
+    - OOM (Out of Memory) Score
+        - Request 대비 실제 메모리 사용량 %가 더 높은 Pod가 먼저 제거됨
+
+**BestEfffort - 최하 등급**
+
+- 어떤 Container 내에도 Request와 Limit가 미설정
+
+# Node Schduling
+
+> 파드는 기본적으로 스케줄러에 의해 노드에 할당된다
+> 
+
+![image.png](attachment:3cf40551-4d55-48a2-9823-54cb9f5988b8:image.png)
+
+**NodeName**
+
+- 스케줄러와 상관없이 해당 노드에 할당됨
+- 운영 상황에서는 노드가 추가되고 삭제되면서 노드명이 바뀌기 때문에 NodeName은 잘 사용안함
+
+**NodeSelector**
+
+- 파드에 키:값을 달면 같은 라벨을 가진 노드에 할당됨
+    - 만약 두 노드 이상이면, 더 자원이 많은 노드에 할당됨
+    - 만약 매칭이되는 노드가 없으면 아무 노드에도 할당되지 않음
+
+**NodeAffinity**
+
+- NodeSelector를 보완해서 사용할 수 있음
+- matchExpressions
+    - key를 설정하면 스케줄러가 해당 key가 있는 노드들 중 자원이 많은 쪽으로 배치
+- Required vs Preferred
+    - Required는 엄격
+        - **NodeSelector랑 비슷**
+    - Preferred
+        - 같은 key를 가진 노드를 선호하지만, 없다면 다른 노드에 할당
+
+**PodAffinity**
+
+- Pod가 다른 Pod의 위치를 보고 노드를 선택
+    - 다른 Pod의 라벨 기준
+
+|  |  |  |
+| --- | --- | --- |
+|  |  |  |
+|  |  |  |
+
+**Taint, Toleration**
+
+- 파드에 Toleration이 있다고 해서, Taint가 있는 노드에 무조건 배치되는게 아니라, Pod가 해당 노드에 스케줄링 됐을 때 노드에 배치될 수 있는 조건이 되는것임.
+    - 즉, Toleration있어도 다른 노드에 배치될 수 있음
+    - 원하는 노드에 배치하려면 ndeSelector 옵션을 추가해야함
+- PreferNoSchedule
+    - 다른 파드들이 이 노드에 스케줄 되지 않지만, 정 할당될 곳 없으면 할당됨
+- NoSchedule (effect)
+    - 다른 파드들이 이 노드에 스케줄 되지 않음
+- NoExecute
+    - NoExecute 효과를 단 Taint를 노드에 설정하면, 노드에 안맞는 기존 파드가 삭제됨
+        - 이미 노드에 파드가 있는 상태에서도 삭제됨 (NoSchedule은 안됨)
+        - 파드가 삭제되지 않도록 하려면 Pod를 만들 때, Toleration (effect: NoExecute)설정을 추가해야됨
+        - 이미 생성된 파드에는 **Toleration을 나중에 추가할 수 없음**
+
+- NodeAffinity, PodAffinity, Taint의 NoSchedule 공통점
+    - 파드가 최초 노드를 선택할때만 고려되는 조건
+    - 이미 파드가 노드에 안착된 상태에서는 노드 라벨 등이 바뀐다고 해서 파드가 삭제되지 않음
+    - but, NoExecute는 삭제됨
+
