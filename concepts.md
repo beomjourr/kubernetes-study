@@ -503,3 +503,53 @@ Forbid
     - 이미 파드가 노드에 안착된 상태에서는 노드 라벨 등이 바뀐다고 해서 파드가 삭제되지 않음
     - but, NoExecute는 삭제됨
 
+
+
+- Kubernetes Cluster의 IP 대역대는 10 또는 20인가?
+    - Pod는 20번대, Service는 10번대
+- 내부망에 연결되어 있는 기기들이 cluster 안에 접근 불가
+    - 연결하고 싶으면 NodePort Service를 만들어야함
+    - 서버(노드)의 IP와 Port를 알면 안에있는 서비스에 접근 가능해짐
+- Cloude환경에서는, 쿠버네티스에서 LoadBalancer 타입의 서버를 만들었을때, NodePort가 생성되면 서 이 Port에 로드밸런서가 연결되고,  외부망에 있는 사람들은 cloude (로드벨런서) IP를 알면 접근이 가능함
+    - 실제로는 클라우드 프로바이더가 로드밸런서 생성/관리
+
+![image.png](attachment:27e08296-1ef0-4c41-bb43-efc0868b4266:image.png)
+
+**Pod가 Service나 Pod에 접근하는 방법**
+
+- 만약 동시 배포될 때, Pod A가  Pod B로 접근하고 싶지만, IP는 생성 시 동적으로 할당 되기 때문에 미리 알 수가 없다면
+    - Headless Service, DNS Server가 필요함
+
+**Pod가 외부 특정 사이트에 접근해서 데이터를 가져와야 할 때**
+
+- 접근 주소를 변경해야 되는 상황에서는
+    - 서비스의 ExternalName을 이용해서 외부연결을 Pod의 수정없이 변경할 수 있음
+
+![image.png](attachment:eb4ccccf-8a6c-4d6f-80dd-31aa8ac0a343:image.png)
+
+DNS Server에는 서비스 도메인 이름과 IP가 저장되어있어서, 예를 들어 파드가 server1에 대한 도메인 이름을 지레아면 해당 IP를 알려줌
+
+- DNS 매커니즘 상 DNS Server에 해당 DNS Server에 도메인 정보 없다면 상위 DNS Server를 찾게 됨
+    - kubernetes Cluster → Internal Network → External Network
+    - pod가 접근할 IP주소를 몰라도 DNS Server를 이용해 알아낼 수 있음
+
+![image.png](attachment:7c5c4eac-69ae-4d84-81ff-fce692a782c1:image.png)
+
+**Cluster IP**
+
+- Service의 이름이 도메인으로 자동 등록되기 때문에, Pod에서는 Service의 이름으로 호출 가능
+- 또한 쿠버네티스에 설치된 CoreDNS를 통해 Service의 이름으로 Service IP를 확인 가능
+- Service FQDN
+    - <service-name>.<namespace-name>.svc.cluseter.local
+    - 같은 namespace 상에서는 <service-name>만, 타 namespace를 호출 시 <service.name> . <namespace-name>까지 입력 필요
+- Pod FQDN : <pod-ip> . <namespace-name> . pod . cluster . local (실 사용 불가)
+
+**Headless Service**
+
+- Headless Service를 만들면 Service의 IP는 할당되지 않음
+- 그래서 DNS에 Service 호출 시 Service IP는 없고, 해당 Service에 연결된 Pod의 IP들만 반환함
+- 또한 Headless Service를 통해 Pod를 Domain 이름으로 호출 가능
+- Pod FQDN
+    - <pod-name>.<service-name>.<namespace-name>.svc.cluster.local
+
+**External Service**
