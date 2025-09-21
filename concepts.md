@@ -544,12 +544,26 @@ DNS Server에는 서비스 도메인 이름과 IP가 저장되어있어서, 예�
     - 같은 namespace 상에서는 <service-name>만, 타 namespace를 호출 시 <service.name> . <namespace-name>까지 입력 필요
 - Pod FQDN : <pod-ip> . <namespace-name> . pod . cluster . local (실 사용 불가)
 
-**Headless Service**
+**Headless**
 
 - Headless Service를 만들면 Service의 IP는 할당되지 않음
+    - yaml에서 clusterIP: None
 - 그래서 DNS에 Service 호출 시 Service IP는 없고, 해당 Service에 연결된 Pod의 IP들만 반환함
 - 또한 Headless Service를 통해 Pod를 Domain 이름으로 호출 가능
 - Pod FQDN
     - <pod-name>.<service-name>.<namespace-name>.svc.cluster.local
 
-**External Service**
+> 단순히 서비스에만 연결할 때는 ClusterIP로 서비스 만들어도 문제없음
+근데 Pod가 다른 Service에 연결된 Pod에 접근하고 싶다면, Headless Service로 만들어야함
+> 
+
+**EndPoint**
+
+- 쿠버네티스는 서비스와 파드가 연결될때(labels, selector) Endpoint를 만들어서 관리함
+    - Service이름과 동일한 이름의 Endpoint와 , 안에는 Pod의 IP,port정보를 가지고 있음
+- 사용자는 Pod와 Service에 label selector없이 직접 Endpoint를 만들어서 연결할 수 있음
+
+**ExternalName**
+
+- externalName 속성에 도메인 정보를 넣을 수 있음
+- DNS cache가 내부 외부정보를 찾아서 IP주소를 알아냄
