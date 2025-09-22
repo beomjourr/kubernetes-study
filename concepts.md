@@ -567,3 +567,110 @@ DNS Server에는 서비스 도메인 이름과 IP가 저장되어있어서, 예�
 
 - externalName 속성에 도메인 정보를 넣을 수 있음
 - DNS cache가 내부 외부정보를 찾아서 IP주소를 알아냄
+
+
+
+# Authentication
+
+> Kubernetes의 모든 작업은 API Server를 통해 진행됨
+그래서 여기에 접근하기 위한 인증이 필요
+> 
+
+![image.png](attachment:68adaec7-3e80-40ef-8e0d-716e40fce1d9:image.png)
+
+**X509 Client Certs**
+
+- 외부에서 Cluster로 API를 보내는 방법으로는 Client key와 crt파일을 이용해서 API Server에 https로 접근
+- 그리고 Cluster 관리자가 kubectl을 이용해서 내부 서버에 Proxy를 만들고 http로 접근
+
+- 사용자가 kubernetes API Server로 접근하려면, kubeconfig(쿠버네티스 설치 시 생성) 파일에 있는 인증서(Client key, Client crt)를 복사해서 가져오면 됨
+- kubectl 설치 시에 kubeconfig 파일을 통채로 복사하는 과정도 있음
+    - 이걸로 kubectl에서 API Server에 접근할 수 있는 권한이 생김
+- kubectl에 accept-hosts 옵션을 통해서 Proxy를 열어두면 외부에서도 http로 접근 가능
+    - kubectl이 인증서를 가지고 있기때문(kubeconfig 복사해온)
+
+**kubectl (API Server와 통신하는 클라이언트)**
+
+- **kubectl config 명령어를 통해 여러 클러스터에 접근 가능함**
+    - 각 클러스터의 kebeconfig 인증서가 kubectl에도 있어야함
+- kubeconfig
+    - 파일 안에는 clusters 항목으로 클러스터 등록 가능
+        - name, url, CA
+    - users라는 항목으로 사용자 등록 가능
+        - name, crt, key
+    - contexts라는 항목으로 clusters와 users를 연결 가능
+        - nmae, cluster, user
+
+**Service Account**
+
+- Pod가 API Server에 접근할 때 사용하는 계정
+- k8s 클러스터에서 namespace 만들면 디폴트라는 이름의 ServiceAccount가 자동으로 만들어짐
+    - ServiceAccount에는 Secret이 달려있는데, 여기에는 CA crt정보와 token값이 들어있음
+    - 파드를 만들면 이 ServiceAccount가 연결되고, Pod는 token값을 가지고 API Server에 접근 가능
+- k8s 1.23이전 버전에서는 자동으로 Secret 생성됐으나, 이후 버전에서는 수동으로 생성해야함
+
+# Authorization
+
+![image.png](attachment:73bfc3d3-527b-4251-8846-b2369fbffbad:image.png)
+
+**RBAC (Role Based Access Control)**
+
+- 역할 기반으로 권한을 부여
+- **"누가 무엇을 할 수 있는지"** 권한을 관리하는 시스템
+- 핵심 개념: 권한 = Role + RoleBinding
+    - Cluster 자원 (Node, PV, namespace 등)에 접근하고 싶다면 ClusterRole 필요
+        - Namespace 내 자원 (Pod, Service 등)에 접근하고 싶다면 Role 필요
+    - **Role**
+        - 네임스페이스 내에서 할 수 있는 작업들을 정의
+        - ‘무엇을 할 수 있는가’를 정의
+        - 여러개를 만들 수 있음
+        
+        ```jsx
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: Role
+        metadata:
+          namespace: default
+          name: pod-reader
+        rules:
+        - apiGroups: [""]          # core API group
+          resources: ["pods"]      # 대상 리소스
+          verbs: ["get", "list"]   # 허용된 동작
+        
+        - apiGroups: ["apps"]
+          resources: ["deployments"]
+          verbs: ["get", "list", "create", "update"]
+        ```
+        
+    - RoleBinding
+        - Role과 ServiceAccount를 연결
+        - ‘누가 이 역할을 가질 것인가’
+        
+        ```jsx
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        metadata:
+          name: read-pods-binding
+          namespace: default
+        subjects:              # 권한을 받을 주체들
+        - kind: User
+          name: jane
+          apiGroup: rbac.authorization.k8s.io
+        - kind: ServiceAccount
+          name: my-sa
+          namespace: default
+        roleRef:               # 연결할 Role
+          kind: Role
+          name: pod-reader
+          apiGroup: rbac.authorization.k8s.io
+        ```
+        
+    - ClusterRole
+        - 클러스터 전체 권한
+    - ClusterRoleBinding
+
+RoleBinding할 떄 내 namespace안의 Role이 아닌, ClusterRole을 지정할 수 있는데
+
+- 이때는 SA가 클러스터 자원에는 접근하지 못하고, 자신의 namespace안에있는 자원에만 접근 가능
+    - 이러면, 그냥 namespace안에 Role만드는거랑 무슨 차이냐?
+    - 모든 namespace마다 똑같은 role를 부여하고 관리하면, 만약 role을 변경해야 될 때 모든 role을 수정해야되는데, clusterRole 하나만 만들어두고, 모든 namespace에 있는 RoleBinding이 ClusterRole 하나만 보고 있다면 한번에 관리가 가능해짐
+        - 즉, 모든 네임스페이스에서 같은 권한을 만들어서 관리해야될 때 유용
