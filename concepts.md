@@ -570,6 +570,42 @@ DNS Server에는 서비스 도메인 이름과 IP가 저장되어있어서, 예�
 
 
 
+# StatefulSet
+
+![image.png](attachment:c566b6c8-5cc9-4024-9a4d-d1bb26ec52b9:image.png)
+
+**Stateless Application**
+
+- 주로 Web Server (APACHE, NGINX, …)
+- stateless는 앱이 여러개 배포되더라도 똑같은 서비스 역할을 함
+    - 볼륨이 반드시 필요하진 않음
+
+**StatefulSet Application**
+
+- 주로 Database
+- StatefulSet은 여러개 배포되더라도 각각 본인의 역할이 있음
+    - Primary
+    - 메인
+    - Secondary
+    - Arbiter
+        - Primary가 죽으면 감지해서, Secondary가 Primary역할을 하게 해줌
+- 각 앱마다 볼륨을 별도로 써야함
+
+### ReplicaSet vs StatefulSet
+
+![image.png](attachment:890cd447-e258-4a01-b6c7-6f9a642ddc96:image.png)
+
+|  | ReplicaSet | StatefulSet |
+| --- | --- | --- |
+| 이름 | Random 이름으로 생성 | 순차적인 Index 이름으로 생성 |
+| replicas를 3으로 늘리면 | 동시에 랜덤이름으로 생성됨 | 순차적으로 index 이름으로 생성됨 |
+| 하나의 파드가 삭제되면 | 새이름으로 생성 | 기존이름으로 생성됨 |
+| replicas를 0으로 바꾸면 | 동시삭제됨 | 순차삭제 (Index가 높은 Pod부터) |
+- statefulSet + Headless Service
+    - **StatefulSet**: Pod 이름이 예측 가능
+    - **Headless Service**: 각 Pod에 직접 도메인 생성
+    - 즉, 특정 Pod를 골라서 직접 접근할 수 있음
+
 # Authentication
 
 > Kubernetes의 모든 작업은 API Server를 통해 진행됨
