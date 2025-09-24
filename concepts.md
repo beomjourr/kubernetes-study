@@ -546,8 +546,9 @@ DNS Server에는 서비스 도메인 이름과 IP가 저장되어있어서, 예�
 
 **Headless**
 
+- Pod가 다른 Pod에 직접 연결하고싶을 때 사용
 - Headless Service를 만들면 Service의 IP는 할당되지 않음
-    - yaml에서 clusterIP: None
+    - yaml에서 clusterIP: None 으로 만들면됨
 - 그래서 DNS에 Service 호출 시 Service IP는 없고, 해당 Service에 연결된 Pod의 IP들만 반환함
 - 또한 Headless Service를 통해 Pod를 Domain 이름으로 호출 가능
 - Pod FQDN
@@ -563,48 +564,38 @@ DNS Server에는 서비스 도메인 이름과 IP가 저장되어있어서, 예�
     - Service이름과 동일한 이름의 Endpoint와 , 안에는 Pod의 IP,port정보를 가지고 있음
 - 사용자는 Pod와 Service에 label selector없이 직접 Endpoint를 만들어서 연결할 수 있음
 
-**ExternalName**
+**ExternalName Service**
 
+- 외부 서비스를 클러스터 내부 서비스처럼 사용할 수 있게 해주는 DNS 별칭
+    - 내부망 DNS 뒤져보지 않고 바로 외부 서비스로 연결
+- Pod와 외부 서비스를 연결하는 용도
 - externalName 속성에 도메인 정보를 넣을 수 있음
 - DNS cache가 내부 외부정보를 찾아서 IP주소를 알아냄
 
+# Volume
 
+![image.png](attachment:3274d26c-7dbb-44af-814f-3dc181d6d41f:image.png)
 
-# StatefulSet
+**PV를 먼저 만들었을 떄와 PVC로 dynamic provisiong 했을 때의 차이**
 
-![image.png](attachment:c566b6c8-5cc9-4024-9a4d-d1bb26ec52b9:image.png)
+- PV를 먼저 만들면, 볼륨이 먼저 만들어지지 않음
+    - pvc에 파드가 연결됐을 때 볼륨이 만들어짐
+    - 즉, 미리 스토리지를 만들어 두거나, PVC만 만들고 자동 생성
+- 후자는 볼륨이 만들어짐
 
-**Stateless Application**
+### status
 
-- 주로 Web Server (APACHE, NGINX, …)
-- stateless는 앱이 여러개 배포되더라도 똑같은 서비스 역할을 함
-    - 볼륨이 반드시 필요하진 않음
-
-**StatefulSet Application**
-
-- 주로 Database
-- StatefulSet은 여러개 배포되더라도 각각 본인의 역할이 있음
-    - Primary
-    - 메인
-    - Secondary
-    - Arbiter
-        - Primary가 죽으면 감지해서, Secondary가 Primary역할을 하게 해줌
-- 각 앱마다 볼륨을 별도로 써야함
-
-### ReplicaSet vs StatefulSet
-
-![image.png](attachment:890cd447-e258-4a01-b6c7-6f9a642ddc96:image.png)
-
-|  | ReplicaSet | StatefulSet |
-| --- | --- | --- |
-| 이름 | Random 이름으로 생성 | 순차적인 Index 이름으로 생성 |
-| replicas를 3으로 늘리면 | 동시에 랜덤이름으로 생성됨 | 순차적으로 index 이름으로 생성됨 |
-| 하나의 파드가 삭제되면 | 새이름으로 생성 | 기존이름으로 생성됨 |
-| replicas를 0으로 바꾸면 | 동시삭제됨 | 순차삭제 (Index가 높은 Pod부터) |
-- statefulSet + Headless Service
-    - **StatefulSet**: Pod 이름이 예측 가능
-    - **Headless Service**: 각 Pod에 직접 도메인 생성
-    - 즉, 특정 Pod를 골라서 직접 접근할 수 있음
+1. Available
+    1. 최초 PV를 만들었을 때의 상태
+    2. PVC와 연결안된 상태
+2. Bound
+    1. PVC와 연결된 상태
+        1. 볼륨이 만들어짐
+3. Released
+    1. PVC를 삭제했을 때
+    2. ReclaimPolicy에 Retain으로 되어있음
+4. Failed
+    1. PV에 문제가 있을 때 (스토리지 접근 불가 등)
 
 # Authentication
 
@@ -630,6 +621,7 @@ DNS Server에는 서비스 도메인 이름과 IP가 저장되어있어서, 예�
 - **kubectl config 명령어를 통해 여러 클러스터에 접근 가능함**
     - 각 클러스터의 kebeconfig 인증서가 kubectl에도 있어야함
 - kubeconfig
+    - kubeconfig가 인증서를 참조하는 개념
     - 파일 안에는 clusters 항목으로 클러스터 등록 가능
         - name, url, CA
     - users라는 항목으로 사용자 등록 가능
@@ -644,6 +636,8 @@ DNS Server에는 서비스 도메인 이름과 IP가 저장되어있어서, 예�
     - ServiceAccount에는 Secret이 달려있는데, 여기에는 CA crt정보와 token값이 들어있음
     - 파드를 만들면 이 ServiceAccount가 연결되고, Pod는 token값을 가지고 API Server에 접근 가능
 - k8s 1.23이전 버전에서는 자동으로 Secret 생성됐으나, 이후 버전에서는 수동으로 생성해야함
+    - 임시토큰이 발급됨
+- Pod는 k8s API Server와 통신하려면  반드시 ServiceAccount에 연결해야하는데, serviceAccountName 명시하지 않으면 default serviceAccount에 연결됨
 
 # Authorization
 
@@ -710,3 +704,41 @@ RoleBinding할 떄 내 namespace안의 Role이 아닌, ClusterRole을 지정할 
     - 이러면, 그냥 namespace안에 Role만드는거랑 무슨 차이냐?
     - 모든 namespace마다 똑같은 role를 부여하고 관리하면, 만약 role을 변경해야 될 때 모든 role을 수정해야되는데, clusterRole 하나만 만들어두고, 모든 namespace에 있는 RoleBinding이 ClusterRole 하나만 보고 있다면 한번에 관리가 가능해짐
         - 즉, 모든 네임스페이스에서 같은 권한을 만들어서 관리해야될 때 유용
+
+Authentication (신원확인) 후 → Authorization (권한확인)
+
+# StatefulSet
+
+![image.png](attachment:c566b6c8-5cc9-4024-9a4d-d1bb26ec52b9:image.png)
+
+**Stateless Application**
+
+- 주로 Web Server (APACHE, NGINX, …)
+- stateless는 앱이 여러개 배포되더라도 똑같은 서비스 역할을 함
+    - 볼륨이 반드시 필요하진 않음
+
+**StatefulSet Application**
+
+- 주로 Database
+- StatefulSet은 여러개 배포되더라도 각각 본인의 역할이 있음
+    - Primary
+    - 메인
+    - Secondary
+    - Arbiter
+        - Primary가 죽으면 감지해서, Secondary가 Primary역할을 하게 해줌
+- 각 앱마다 볼륨을 별도로 써야함
+
+### ReplicaSet vs StatefulSet
+
+![image.png](attachment:890cd447-e258-4a01-b6c7-6f9a642ddc96:image.png)
+
+|  | ReplicaSet | StatefulSet |
+| --- | --- | --- |
+| 이름 | Random 이름으로 생성 | 순차적인 Index 이름으로 생성 |
+| replicas를 3으로 늘리면 | 동시에 랜덤이름으로 생성됨 | 순차적으로 index 이름으로 생성됨 |
+| 하나의 파드가 삭제되면 | 새이름으로 생성 | 기존이름으로 생성됨 |
+| replicas를 0으로 바꾸면 | 동시삭제됨 | 순차삭제 (Index가 높은 Pod부터) |
+- statefulSet + Headless Service
+    - **StatefulSet**: Pod 이름이 예측 가능
+    - **Headless Service**: 각 Pod에 직접 도메인 생성
+    - 즉, 특정 Pod를 골라서 직접 접근할 수 있음
