@@ -742,3 +742,100 @@ Authentication (신원확인) 후 → Authorization (권한확인)
     - **StatefulSet**: Pod 이름이 예측 가능
     - **Headless Service**: 각 Pod에 직접 도메인 생성
     - 즉, 특정 Pod를 골라서 직접 접근할 수 있음
+
+
+
+    **Master Node**
+
+- /etc/kubernetes/manifests에 yaml파일이 있는데, 쿠버네티스가 기동 시에 이 파일 읽어서 컴포넌트들 생성함
+- Etcd, kube-scheduer, kuber-apiserver가 각각 Pod의 형태로 띄워져 있음
+- Etcd
+    - 쿠버네티스에서 여러 데이터들을 저장함
+- kube-scheduler
+    - 각각의 노드의 자원을 체크하고 있음
+    - Watch라는 기능으로, kube-apiserver를 통해 etcd에 Pod생성 요청이 들어온게 있는지 감시
+        - 만약에 요청이 들어오면, Node 자원상태 확인 후 Pod에 적절한 Node정보를 붙혀줌
+- Controller Manager
+    - Watch라는 기능으로, kube-apiserver를 통해 etcd에 컨트롤러 생성 요청이 들어온게 있는지 감시
+        - 만약에 요청이 들어오면, Pod를 만들도록 함
+
+**Worker Node**
+
+- kubelet, Container Runtime(Docker)가 k8s설치시 설치
+- kubelet
+    - Watch 기능으로 kube-apiserver를 통해 파드에 자신의 노드번호가 붙어있는지 체크 후 자신의 노드번후가 붙게된 파드를 발견하면, 그 정보를 가져와서 파드를 만듬
+        - 도커에게 컨테이너를 만들어달라고 함
+    - kube-proxy에게 Network생성 요청을 하고,  kube-proxy가 새로 생성된 컨테이너에 통신이 되도록 도와줌
+- kube-proxy
+    - manifests에 kube-proxy.yaml파일은 DameonSet이라서 모든 노드에 kube-proxy가 생성됨
+- container runtime
+    - **kubelet과 Docker는 직접 통신하지 않습니다** - CRI 인터페이스를 통해 추상화됩니다
+    - 최근에는 Docker 대신 **containerd나 CRI-O**를 직접 사용하는 추세입니다 (Docker는 중간 레이어가 하나 더 있어서 비효율적)
+
+![image.png](attachment:bf2e5b4c-045e-4488-9072-388e4d6f710a:image.png)
+
+**Network Plugin**
+
+- 같은 노드 위의 파드들 간의 통신 담당
+- 외부 네트워크를 통한 타 노드위의 파드들 간의 통신 담당
+
+# Pod Network
+
+### Pause Container
+
+![image.png](attachment:a19dfcdb-f147-4042-996c-7ccb7a530f84:image.png)
+
+- Pod를 만들게 되면, Pause Container가 자동으로 생김
+    - 네트워킹 담당
+    - 인터페이스가 달려있고, IP도 생김
+    - 쿠버네티스가 Pause Container의 Network Namespace를 Pod 내의 모든 Conatiner가 같이 쓰도록 구성해줌
+        - Pause Container에 대한 IP에 대한 네트워크 공유
+            - Container 간의 구분은 Port로
+- Worker Node에는 기본적으로 Host Network Namespace가 있는데 Pause Container가 생기면,  Host Network Namespace에 가상 인터페이스가 하나 생기면서 Pause Conatiner의 인터페이스와 연결 됨
+    - 1:1 매칭 (노드의 Host Network Namespace 가상 인터페이스 - Pause Conatiner)
+- 
+
+![image.png](attachment:2ae4809c-7501-4fe0-bd40-7304e06414b2:image.png)
+
+- 모든 노드의 kubelet 내장 cAdvisor가 메트릭의 원천임
+    - Core에서는 metrics-server가,  Service plpeline에서는 Promethus같은 Agent가 kubelet API 호출해서 메트릭 수집
+- kube api server는 로그 수집을 위해 kubelet에 직접 접근하고, 메트릭 수집은 metrics-server를 거침
+- Metrics Server
+    - Kubernetes 운영에 필수적인 최소한의 메트릭, 실시간 의사결정용
+    - 데이터를 메모리에 저장하여 휘발성 (15분정도)
+- Prometheus
+    - 프로덕션 모니터링을 위한 풍부한 메트릭, 분석 및 알림용
+    - 데이터를 디스크에 시계열 데이터로 저장 (장기보관)
+
+![image.png](attachment:67ce586c-397f-4247-964c-843b4befcbbf:image.png)
+
+**Node Logging Agent (Node Agent)**
+
+- 가장 일반적인 방식
+- 모든 노드에 Logging Agent Pod를 DaemonSet으로 배포
+    - 노드당 Agent 1개라 리소스 효울 좋음
+- Agent가 해당 노드의 /var/log/pods/ , /var/log/containers/ 디렉토리를 읽음
+- 모든 Pod의 stdout/stderr 로그를 한 번에 수집
+    - stdout/stderr만 수집 가능
+
+**Sidecar Container Streaming**
+
+1. 메인 컨테이너
+→ 로그를 파일에 저장 (/var/log/app.log)
+2. Sidecar 컨테이너
+→ 그 파일을 읽어서 stdout으로 출력 (tail -F)
+3. Node Agent (DaemonSet)
+→ Sidecar의 stdout을 수집
+4. Node Agent
+→ Loki/Elasticsearch 같은 중앙 저장소에 전송
+
+**Sidecar Container with Logging Agent**
+
+- Pod마다 독립적인 Logging Agent 실행
+    - Pod별로 다른 설정 가능
+    - 비용 비효율적
+- Sidecar가 직접 중앙 저장소로 전송
+- Node Logging Agent를 거치지 않음
+
+> Sidecar Container란
+메인 컨테이너를 보조하는 컨테이너로, 같은 볼륨(파일시스템) 공유가 가능해서 로그 작성용으로 용이
